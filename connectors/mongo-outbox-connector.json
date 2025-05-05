@@ -1,0 +1,16 @@
+{
+  "name": "mongo-outbox-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.mongodb.MongoDbConnector",
+    "mongodb.name": "mongo",
+    "mongodb.connection.string": "mongodb://mongodb:27017",
+    "mongodb.connection.mode": "replica_set",
+    "mongodb.ssl.enabled": "false",
+    "mongodb.poll.interval.ms": "1000",
+    "collection.include.list": "outbox-db.outbox_messages",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "topic.prefix": "outbox"
+  }
+}

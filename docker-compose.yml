@@ -1,0 +1,110 @@
+services:
+  mongodb:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - ./mongo_data:/data/db
+    networks:
+      - outbox-network
+  init-mongo:
+    image: mongo
+    depends_on:
+      - mongodb
+    networks:
+      - outbox-network
+    command: >
+      bash -c "
+        sleep 5 &&
+        mongosh --host mongodb --eval '
+          rs.initiate({
+            _id: \"rs0\",
+            members: [{ _id: 0, host: \"mongodb:27017\" }]
+          })
+        '"
+  zookeeper:
+    container_name: zookeeper
+    image: confluentinc/cp-zookeeper:7.5.0
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    healthcheck:
+      test: [ "CMD", "echo", "ruok", "|", "nc", "localhost", "2181" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - outbox-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - outbox-network
+
+  connect:
+    image: quay.io/debezium/connect:2.5
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./connectors:/kafka/connectors
+      - ./connectors/scripts:/kafka/scripts
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: my_connect_configs
+      OFFSET_STORAGE_TOPIC: my_connect_offsets
+      STATUS_STORAGE_TOPIC: my_connect_statuses
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+    depends_on:
+      - kafka
+      - mongodb
+    networks:
+      - outbox-network
+  register-connector:
+    image: quay.io/debezium/connect:2.5
+    depends_on:
+      - connect
+    volumes:
+      - ./connectors:/kafka/connectors
+      - ./connectors/scripts:/kafka/scripts
+    entrypoint: [ "bash", "-c", "sleep 10 && /kafka/scripts/register-connector.sh" ]
+    networks:
+      - outbox-network
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+    depends_on:
+      - kafka
+      - zookeeper
+    networks:
+      - outbox-network
+
+
+
+
+networks:
+  outbox-network:
+    driver: bridge
