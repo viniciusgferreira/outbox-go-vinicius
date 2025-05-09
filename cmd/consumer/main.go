@@ -8,10 +8,12 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
+const consumerGroup = "outbox-consumer-group-1"
+
 func main() {
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": "localhost:29092",
-		"group.id":          "outbox-consumer-group2",
+		"group.id":          consumerGroup,
 		"auto.offset.reset": "earliest",
 	})
 	if err != nil {
